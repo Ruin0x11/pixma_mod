@@ -10,8 +10,8 @@ local Ui = require("api.Ui")
 local UiList = require("api.gui.UiList")
 local UiTheme = require("api.gui.UiTheme")
 local UiWindow = require("api.gui.UiWindow")
+local ChooseAllyMenu = require("api.gui.menu.ChooseAllyMenu")
 local Pixma = require("mod.pixma.api.Pixma")
-local vips = require("vips")
 
 local PrintDialog = class.class("PrintDialog", IUiLayer)
 
@@ -19,7 +19,7 @@ PrintDialog:delegate("input", IInput)
 PrintDialog:delegate("list", "items")
 
 function PrintDialog:init(ip)
-   ip = ip or config["pixma.printer_ip"]
+   ip = ip or config.pixma.printer_ip
 
    self.pixma = Pixma:new(ip)
    self.status = {}
@@ -27,7 +27,8 @@ function PrintDialog:init(ip)
 
    self.win = UiWindow:new("Printer Status", true)
    self.list = UiList:new {
-      "Select Item",
+      "Scan Item",
+      "Scan Ally",
       "Select Paper",
       "Print",
    }
@@ -74,7 +75,7 @@ function PrintDialog:relayout(x, y)
    self.chip_batch = self:make_chip_batch()
 
    self.win:relayout(self.x, self.y, self.width, self.height)
-   self.list:relayout(self.x + math.floor(self.width / 2) - 80, self.y + math.floor((self.height / 4) * 2.6))
+   self.list:relayout(self.x + math.floor(self.width / 2) - 80, self.y + math.floor((self.height / 4) * 2.4))
 end
 
 local COLORS = {
@@ -118,7 +119,7 @@ function PrintDialog:draw()
    end
 
    Draw.set_color(0, 0, 0)
-   Draw.text("Scanned item:", self.x + 320, self.y + 220)
+   Draw.text("Scanned image:", self.x + 320, self.y + 220)
    if self.image then
       self.chip_batch:draw(self.x + 350 - 12, self.y + 255 - 18)
    else
@@ -133,7 +134,7 @@ end
 
 function PrintDialog:print()
    if not self.image then
-      Gui.mes("You haven't scanned an item yet.")
+      Gui.mes("You haven't scanned something yet.")
       return
    end
 
@@ -155,6 +156,7 @@ function PrintDialog:print()
    -- I don't know if this is sustainable, or if we even want to use native
    -- libraries in mods. Minecraft does allow them (see the Discord API
    -- integration), but the modding culture might be different there.
+   local vips = require("vips")
    local png = image_data:encode("png")
    local im = vips.Image.new_from_buffer(png:getString())
    local buffer = im:write_to_buffer(".jpg", {Q = 100})
@@ -170,8 +172,9 @@ end
 function PrintDialog:update(dt)
    if self.list.chosen then
       if self.list.selected == 1 then
+         Gui.mes("Which item?")
          local result, canceled = Input.query_item(Chara.player(), "elona.inv_examine")
-         if result then
+         if result and not canceled then
             local item = result.result
             self.image = item:calc("image")
             self.chip_batch = self:make_chip_batch()
@@ -179,14 +182,24 @@ function PrintDialog:update(dt)
             Gui.play_sound("pixma.printer_on")
          end
       elseif self.list.selected == 2 then
+         Gui.mes("Which ally?")
+         local result, canceled = ChooseAllyMenu:new():query()
+         if result and not canceled then
+            local ally = result.ally
+            self.image = ally:calc("image")
+            self.chip_batch = self:make_chip_batch()
+            Gui.mes("You scan " .. ally.name .. ".")
+            Gui.play_sound("pixma.printer_on")
+         end
+      elseif self.list.selected == 3 then
          Gui.mes("Which paper?")
          local choices = fun.iter(PAPER_SIZES):extract(2):to_list()
          local result, canceled = Input.prompt(choices)
-         if result then
+         if result and not canceled then
             self.paper_size = PAPER_SIZES[result.index][1]
             Gui.play_sound("base.ok1")
          end
-      elseif self.list.selected == 3 then
+      elseif self.list.selected == 4 then
          Gui.play_sound("base.ok1")
          self:print()
       end
